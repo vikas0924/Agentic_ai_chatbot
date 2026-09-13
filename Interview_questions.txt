@@ -1,0 +1,220 @@
+1. What is persistence in an LLM application?
+
+Answer: Persistence means storing the agent's state/history so it can be recovered across multiple interactions or after a restart.
+
+2. What is short-term memory?
+
+Answer: Memory available within a conversation/thread. In LangGraph, it is maintained using a checkpointer.
+
+Example:
+User: "My name is Vikas."
+Later in the same thread: "What is my name?" → Agent remembers.
+
+3. What is long-term memory?
+
+Answer: Memory that persists across different conversations/threads, usually implemented using a Store.
+
+Example:
+Monday → User tells agent "I prefer Python."
+Friday → New conversation → Agent still knows the preference.
+
+4. What is a thread?
+
+Answer: A thread represents a sequence of related runs/conversation state, identified by a unique thread_id.
+
+config = {
+    "configurable": {
+        "thread_id": "user_123"
+    }
+}
+5. Why is thread_id important?
+
+Answer: It tells the checkpointer which conversation's state to load and save.
+
+Same thread_id → same conversation memory.
+Different thread_id → separate conversation.
+
+6. What is a checkpointer?
+
+Answer: A checkpointer saves the graph's state as checkpoints, allowing conversation continuity, recovery, interrupts/resume, and time-travel/debugging.
+
+graph.compile(checkpointer=checkpointer)
+7. Checkpointer vs Store?
+Checkpointer	Store
+Short-term memory	Long-term memory
+Within one thread	Across threads
+Uses thread_id	Uses namespaces/keys
+Conversation state	User facts/preferences
+Checkpoints graph state	Stores application data
+
+Interview one-liner:
+
+"Checkpointer remembers the conversation; Store remembers the user."
+
+8. What is InMemorySaver?
+
+Answer: A checkpointer that stores state in application memory.
+
+Good for:
+
+Development
+Testing
+Prototypes
+
+But data is lost when the process restarts.
+
+9. What should you use in production?
+
+Answer: A durable database-backed checkpointer such as PostgresSaver when you need persistence across restarts and multiple application instances.
+
+10. Does checkpointer store the entire conversation?
+
+Answer: It can store the graph state, which commonly includes the message history. But that does not mean the entire stored history must always be sent to the LLM. Long conversations are often trimmed or summarized to control token usage.
+
+11. If I use the same thread_id, what happens?
+
+Answer: The previous state of that thread is loaded, so the agent can continue the conversation.
+
+thread_id = "1"
+     ↓
+Message 1
+     ↓
+Message 2
+     ↓
+Message 3
+
+All belong to the same conversation state.
+
+12. What happens if I change thread_id?
+thread_id = "1" → Conversation A
+thread_id = "2" → Conversation B
+
+The two conversations have separate short-term memory.
+
+13. Can short-term memory survive application restart?
+
+Answer:
+InMemorySaver: No.
+Database-backed checkpointer: Yes.
+
+14. What is time travel in LangGraph?
+
+Answer: Because checkpoints are saved over time, you can inspect or resume a thread from an earlier checkpoint/state. Useful for debugging and replaying workflows.
+
+15. What is the difference between session and thread?
+
+Answer: In practical chatbot design, a session is the user's interaction period, while a thread is LangGraph's persistence identifier for a sequence of related runs.
+
+Think:
+
+User
+ ├── Thread 1 → Chat about Python
+ └── Thread 2 → Chat about ML
+
+
+16. How would you implement both short-term and long-term memory?
+
+Answer:
+
+User
+ ↓
+thread_id
+ ↓
+Checkpointer → conversation state
+ ↓
+Store → user preferences/facts
+ ↓
+LLM
+
+This is the production-level answer interviewers generally want.
+
+17. What is the biggest problem with storing the entire chat history?
+
+Answer: Token cost + latency + context-window limitations. Long histories can also reduce model performance because of irrelevant/stale information.
+
+Common solutions:
+
+Trim old messages
+Summarize conversation
+Retrieve only relevant memories
+Store important facts separately
+
+
+18. MemorySaver vs PostgresSaver?
+
+Answer:
+
+MemorySaver
+→ RAM
+→ Fast
+→ Development/testing
+→ Lost on restart
+
+PostgresSaver
+→ Database
+→ Durable
+→ Production
+→ Survives restart
+19. What is the difference between persistence and memory?
+
+Answer:
+Persistence = mechanism for saving state.
+Memory = information the agent can recall.
+
+For example:
+
+Postgres Checkpointer
+        ↓
+   Persistence
+        ↓
+Conversation History
+        ↓
+   Short-term Memory
+20. Most important interview question ⭐
+
+Interviewer: "Explain how memory works in your LangGraph chatbot."
+
+Best short answer:
+
+"I use a checkpointer for short-term, thread-level memory. Each conversation gets a unique thread_id, and the checkpointer stores the graph state for that thread. For long-term memory across different conversations, 
+I would use a LangGraph Store. In development I can use InMemorySaver, while in production I would use a durable backend like Postgres."
+
+⭐ Remember this diagram
+                 LLM Agent
+                    │
+          ┌─────────┴─────────┐
+          ↓                   ↓
+   Checkpointer              Store
+          ↓                   ↓
+ Short-term memory      Long-term memory
+          ↓                   ↓
+     thread_id          cross-thread
+          ↓                   ↓
+ Conversation A        User preferences
+ Conversation B        User facts
+
+If you remember only 4 things for the interview:
+
+Thread = conversation identity
+Checkpointer = short-term/thread memory
+Store = long-term/cross-thread memory
+Postgres = durable production persistence
+
+
+
+
+### Short-Term & Long-Term Memory in AI Agents
+
+**Short-term memory** maintains the state of the **current conversation/thread**. In LangGraph, it is typically implemented using a **Checkpointer** such as InMemorySaver, SQLite, or PostgreSQL. A unique `thread_id` identifies each conversation and allows the agent to save and retrieve its state.
+
+**Long-term memory** stores important information that should remain available **across different conversations/threads**. It is typically implemented using a **Store** with a persistent database. Memories can be associated with a `user_id` or namespace.
+
+A database itself is not memory. For example, **SQLite + Checkpointer = persistent short-term memory**, while **PostgreSQL + Store = long-term memory**. The same database technology can technically be used for either purpose depending on how it is configured.
+
+The agent does not automatically store every message in long-term memory. A **memory-writing mechanism** decides what is worth remembering. This can be based on explicit user instructions ("Remember that I prefer Python") or an LLM-based extraction step that identifies stable, useful facts and preferences.
+
+During a future conversation, relevant long-term memories can be retrieved and provided to the LLM as context.
+
+**Simple rule:**
+**Short-term = What happened in this conversation?**
+**Long-term = What should I remember about this user?**
