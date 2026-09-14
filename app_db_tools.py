@@ -1,5 +1,5 @@
-from chatbot_db_backend import chatbot, get_all_threads
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from chatbot_db_tool_backend import chatbot, get_all_threads
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
 import streamlit as st
 import uuid 
 
@@ -189,35 +189,42 @@ if user_input:
 
 
 
-    # Create the assistant chat-message container
+    # Assistant streaming block
     with st.chat_message("assistant"):
+        # Use a mutable holder so the generator can set/modify it
+        status_holder = {"box": None}
 
-        # Stream the assistant response token by token
-        ai_message = st.write_stream(
-
-            # Return only the content of AI message chunks
-            message_chunk.content
-
-            # Stream messages from the LangGraph chatbot
+        def ai_only_stream():
             for message_chunk, metadata in chatbot.stream(
-                {
-                    # Send the latest user message to the chatbot
-                    "messages": [
-                        HumanMessage(content=user_input)
-                    ]
-                },
-
-                # Use the current conversation thread
+                {"messages": [HumanMessage(content=user_input)]},
                 config=CONFIG,
+                stream_mode="messages",
+            ):
+                # Lazily create & update the SAME status container when any tool runs
+                if isinstance(message_chunk, ToolMessage):
+                    tool_name = getattr(message_chunk, "name", "tool")
+                    if status_holder["box"] is None:
+                        status_holder["box"] = st.status(
+                            f"🔧 Using `{tool_name}` …", expanded=True
+                        )
+                    else:
+                        status_holder["box"].update(
+                            label=f"🔧 Using `{tool_name}` …",
+                            state="running",
+                            expanded=True,
+                        )
 
-                # Stream individual message chunks
-                stream_mode="messages"
+                # Stream ONLY assistant tokens
+                if isinstance(message_chunk, AIMessage):
+                    yield message_chunk.content
+
+        ai_message = st.write_stream(ai_only_stream())
+
+        # Finalize only if a tool was actually used
+        if status_holder["box"] is not None:
+            status_holder["box"].update(
+                label="✅ Tool finished", state="complete", expanded=False
             )
-
-            # Display only AI messages
-            # This prevents tool and user messages from appearing
-            if isinstance(message_chunk, AIMessage)
-        )
 
 
     # Save the complete assistant response in Streamlit session state
